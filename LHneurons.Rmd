@@ -1,0 +1,20 @@
+---
+title: "LHneurons"
+output: html_document
+date: "2023-11-10"
+---
+
+look for LH neurons currently not annotated as LH
+1. get everything with at least 20% of its input form the LH
+
+
+
+```{r setup, include=FALSE}
+
+```
+
+
+
+```{r setup, include=FALSE}
+
+```
