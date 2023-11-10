@@ -1,0 +1,102 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## Introduction
+
+We would like to compute the effective connectivity across brain layers.
+This was done for example in [Li et al MB Hemibrain Paper](https://elifesciences.org/articles/62576#s4)
+
+In several analyses, we computed the ‘effective’ connectivity through multi-synaptic pathways between a set of source and target neurons: Figure 10—figure supplement 2; Figure 11—figure supplement 1; Figure 26—figure supplements 2,3; Figure 27—figure supplement 3. Although our procedure generalizes to pathways of any length, we only performed it for two-step (or ‘one-hop’) pathways. To do so, we determined the set of interneurons either postsynaptic to the source population or presynaptic to the target population. Starting with the matrices of source-interneuron connectivity and interneuron-target connectivity, we normalized each so that the sum of inputs to each postsynaptic cell summed to 1. Then we multiplied the two matrices to yield an estimate of effective source-target connectivity. This procedure reflects the assumption that an output synapse from an interneuron conveys information about its inputs to varying degrees, which are proportional to the number of input synapses coming from each input.
+
+This works well if you can define the source and target neurons.
+
+## Design
+
+It would probably be quite useful if we could do this using coconat/coconatfly.
+This would involve for a one hop connection
+
+* get a partner table for neurons downstream of the starter neurons
+* get a partner table for neurons upstream of the target neurons
+* find the intersection of these two sets of neurons
+* (per dataset) use [`coconat::partner_summary2adjacency_matrix`](https://natverse.org/coconat/reference/partner_summary2adjacency_matrix.html) to make an adjacency matrix.
+
+## Implementation
+
+```{r, message=FALSE}
+# BiocManager::install("InteractiveComplexHeatmap")
+# library(InteractiveComplexHeatmap)
+library(dplyr)
+# natmanager::install(pkgs = 'coconatfly')
+library(coconatfly)
+library(tibble)
+```
+
+
+```{r}
+#' Compute the effective connectivity through one hop between 
+#'
+#' @param startids 
+#' @param endids 
+#' @param threshold 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+#' effective_connectivity(startids=cf_ids(flywire = "/type:DA[1-4].*_.*PN"), 
+#' endids=cf_ids(flywire = "/type:MBON16.*"), threshold=5)
+effective_connectivity <- function(startids, endids, threshold=1L) {
+  startds=cf_partners(startids, threshold=threshold, partners = 'out')
+  endus=cf_partners(endids, threshold=threshold, partners = 'in')
+  
+  common_keys=intersect(startds$post_key, endus$pre_key)
+  startds=startds %>% filter(post_key %in% common_keys)
+  endus=endus %>% filter(pre_key %in% common_keys)
+  
+  startmat=coconat::partner_summary2adjacency_matrix(startds,
+                                                     inputcol = "pre_key",
+                                                     outputcol = "post_key",
+                                                     outputids = common_keys)
+  endmat=coconat::partner_summary2adjacency_matrix(endus,
+                                                     inputcol = "pre_key",
+                                                     outputcol = "post_key",
+                                                     inputids = common_keys)
+  # check we have the two matrices in the same format
+  stopifnot(isTRUE(all.equal(colnames(startmat),rownames(endmat))))
+  # normalise the startmat so that 
+  
+  scalemat=function(x) {
+    # scale by column sum (ie inputs onto each neuron)
+    # make sure to scale by 0 for columns with no inputs
+    scalevec=Matrix::colSums(x)
+    scalevec[scalevec>0]=1/scalevec[scalevec>0]
+    Matrix::colScale(startmat, scalevec)
+  }
+  startmat.norm=Matrix::colScale(startmat, 1/Matrix::colSums(startmat))
+  endmat.norm=Matrix::colScale(endmat, 1/Matrix::colSums(endmat))
+  
+  prod=startmat.norm %*% endmat.norm
+  prod
+}
+```
+
+
+```{r}
+
+#' Turn an adjacency matrix into a partner summary matrix
+#' 
+#' This could be helpful 
+#'
+#' @param x An adjacency matrix (often sparse)
+#'
+#' @return A data.frame 
+#' @export
+#'
+#' @examples
+adjacency_matrix2partner_summary <- function(x) {
+  
+}
+```
+

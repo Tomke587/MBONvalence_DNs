@@ -1,0 +1,62 @@
+---
+title: "MBON_DN_effectiveconn"
+author: "Tomke Stuerner"
+date: "2023-11-10"
+output: html_document
+---
+#look at the connections between MBONs and DNs
+1. effective connectivity (Greg, no layer specification at the moment, normalised)
+2. direct connections
+3. 1hop connections
+
+```{r setup, include=FALSE}
+library(dplyr)
+# natmanager::install(pkgs = 'coconatfly')
+library(coconatfly)
+library(tibble)
+```
+```{r setup, include=FALSE}
+MBON=cf_meta(cf_ids(flywire='cell_class:MBON'))
+nrow(MBON)
+# 96
+LH = cf_meta(cf_ids(flywire='/type:LH.+')) 
+nrow(LH)
+# 771, not all need to increase by looking at everything with more than x% input from the LH
+# DN = cf_meta(cf_ids(flywire='super_class:descending'))
+DN = cf_meta(cf_ids(flywire='super_class:descending'))
+nrow(DN)
+# 1349
+```
+
+```{r}
+mbon.dn=effective_connectivity(startids=cf_ids(flywire = MBON), 
+  endids=cf_ids(flywire = "/super_class:descending"), threshold=2)
+
+mbon.dn_matrix = as.matrix(mbon.dn)
+mbon.dn_df = as.data.frame(mbon.dn_matrix)
+MBONtype = subset(MBON, select = c(id, type))
+MBONtype$id = paste0("fw:", MBONtype$id, sep = "")
+DNtype = subset(DN, select = c(id, type))
+DNtype$id = paste0("fw:", DNtype$id, sep = "")
+mbon.dn_df<- mbon.dn_df %>% rownames_to_column(var="id")
+mbon.dn_df = left_join(mbon.dn_df, MBONtype)
+mbon.dn_df %>%
+  group_by(type) %>%
+  summarise(across(where(is.numeric), ~sum(.x))) ->mbon.dn_dftype
+mbon.dn_dftype <- mbon.dn_dftype %>% remove_rownames %>% column_to_rownames(var="type")
+# mbon.dn_dftype
+mbon.dn_dftype <- as.data.frame(t(mbon.dn_dftype))
+mbon.dn_dftype <- mbon.dn_dftype %>% rownames_to_column(var="id")
+mbon.dn_dftypes = left_join(mbon.dn_dftype, DNtype)
+mbon.dn_dftypes %>%
+  group_by(type) %>%
+  summarise(across(where(is.numeric), ~mean(.x))) ->mbon.dn_dftypes
+mbon.dn_dftypes <- mbon.dn_dftypes %>% remove_rownames %>% column_to_rownames(var="type")
+mbon.dn_dftypes <- as.data.frame(t(mbon.dn_dftypes))
+mbon.dn_dftypes = as.matrix(mbon.dn_dftypes)
+
+library(reshape2)
+mbon_dn_norm = setNames(melt(mbon.dn_dftypes), c('MBONtype', 'DNtype', 'normvalues'))
+mbon_dn_norm = subset(mbon_dn_norm,!mbon_dn_norm$DNtype %in% c("DN1a", "DN1pA", "DN1pB"))
+```
+
