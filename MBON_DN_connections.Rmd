@@ -15,6 +15,7 @@ library(dplyr)
 library(coconatfly)
 library(tibble)
 ```
+
 ```{r setup, include=FALSE}
 MBON=cf_meta(cf_ids(flywire='cell_class:MBON'))
 nrow(MBON)
@@ -24,7 +25,7 @@ nrow(LH)
 # 771, not all need to increase by looking at everything with more than x% input from the LH
 # DN = cf_meta(cf_ids(flywire='super_class:descending'))
 DN = cf_meta(cf_ids(flywire='super_class:descending'))
-nrow(DN)
+# nrow(DN)
 # 1349
 ```
 
@@ -57,6 +58,7 @@ mbon.dn_dftypes = as.matrix(mbon.dn_dftypes)
 
 library(reshape2)
 mbon_dn_norm = setNames(melt(mbon.dn_dftypes), c('MBONtype', 'DNtype', 'normvalues'))
-mbon_dn_norm = subset(mbon_dn_norm,!mbon_dn_norm$DNtype %in% c("DN1a", "DN1pA", "DN1pB"))
+mbon_dn_norm = subset(mbon_dn_norm, mbon_dn_norm$normvalues>0)
+write.csv(mbon_dn_norm, "mbon_dn_norm.csv")
 ```
 
