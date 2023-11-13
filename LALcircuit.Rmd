@@ -1,0 +1,170 @@
+---
+title: "LAL_circuit"
+author: "Tomke Stuerner"
+date: "2023-11-13"
+output: html_document
+---
+Direct and indirect connectivity DS of MBONs suggests a circuit from "MBON31", "MBON32", "MBON26", "MBON27" together with "LHPV5e3" onto DNa02 and DNa03
+
+1. Load neurons in the circuit and other important potential partners or cruci
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(coconatfly)
+library(tibble)
+library(fafbseg)
+library(igraph)
+library(RCy3)
+library(igraph)
+library(sjmisc)
+library(svglite)
+```
+
+MBONs
+```{r setup, include=FALSE}
+MBON_interest = c("MBON31", "MBON32", "MBON26", "MBON27")
+MBONs=cf_meta(cf_ids(flywire='cell_class:MBON'))
+MBONs = subset(MBONs, MBONs$type %in% MBON_interest)
+
+MBONs_DS =  cf_partners(cf_ids(flywire = MBONs), threshold = 5, partners = 'output')
+MBONs_DS <- MBONs_DS %>% arrange(pre_id, desc(weight))
+MBONs_DStop5 <- MBONs_DS %>% group_by(pre_id) %>% slice_head(n = 5)
+MBONs_DStop5_types = unique(MBONs_DStop5$type)
+
+# collect all ids in circuit
+circuittypes = c(MBON_interest, MBONs_DStop5_types) 
+```
+LAL051
+```{r setup, include=FALSE}
+# top partner is LAL051 (LAL171,LAL172): glutamatergic neuron 
+LAL_DS =  cf_partners(cf_ids(flywire = '/type:LAL051'), threshold = 5, partners = 'output')
+# top DS partner is DNa03 (targetted by the MBONs also directlt)
+# several LAL neurons including LAL171,LAL172
+# also DNa02
+LAL_DS <- LAL_DS %>% arrange(pre_id, desc(weight))
+LAL_DStop5 <- LAL_DS %>% group_by(pre_id) %>% slice_head(n = 5)
+LAL_DStop5_types = unique(LAL_DStop5$type)
+
+# look at LH input onto this LAL neuron and all other strong inputs (top10)
+LAL_US =  cf_partners(cf_ids(flywire = '/type:LAL051'), threshold = 5, partners = 'input')
+LAL_US <- LAL_US %>% arrange(pre_id, desc(weight))
+LAL_UStop10 <- LAL_US %>% group_by(pre_id) %>% slice_head(n = 10)
+LAL_UStop10_types = unique(LAL_UStop10$type)
+# collect all ids in circuit
+circuittypes = c(circuittypes, LAL_DStop5_types,LAL_UStop10_types) 
+circuittypes = unique(circuittypes)
+length(circuittypes)
+```
+
+
+LHPV5e3
+```{r setup, include=FALSE}
+# US and DS of LHPV5e3
+LHPV5e3_US =  cf_partners(cf_ids(flywire = '/type:LHPV5e3'), threshold = 5, partners = 'input')
+
+
+LHPV5e3_DS =  cf_partners(cf_ids(flywire = '/type:LHPV5e3'), threshold = 5, partners = 'output')
+LHPV5e3_DS <- LHPV5e3_DS %>% arrange(pre_id, desc(weight))
+LHPV5e3_DStop5 <- LHPV5e3_DS %>% group_by(pre_id) %>% slice_head(n = 5)
+LHPV5e3_DStop5_types = unique(LHPV5e3_DStop5$type)
+circuittypes = c(circuittypes, LHPV5e3_DStop5_types)
+```
+
+
+```{r setup, include=FALSE}
+# collect all ids in circuit
+circuittypes = unique(circuittypes)
+length(circuittypes)
+# 78
+# remove if it is not typed
+circuittypes_filtered <- circuittypes[!grepl("^\\d+$", circuittypes, perl = TRUE)]
+circuittypes_filtered <- na.omit(circuittypes_filtered)
+length(circuittypes_filtered)
+# 66
+```
+
+make square matrix for cytoscape
+```{r setup, include=FALSE}
+types = circuittypes_filtered
+total_outputs <- data.frame()
+for (neuron_name in circuittypes_filtered) {
+  cat("finding data for:", neuron_name, "\n")
+  tmp_neuron_outputs <- cf_partner_summary(cf_ids(neuron_name, datasets = "flywire"), threshold = 5, partners = 'outputs')
+  
+  # Concatenate the results to the total_outputs dataframe
+  total_outputs <- rbind(total_outputs, tmp_neuron_outputs)
+}
+write.csv(total_outputs, file = "LALcircuitdf.csv")
+
+total_outputs2 = subset(total_outputs, total_outputs$type.post %in% circuittypes_filtered)
+
+total_outputs2$type.post <- strsplit(as.character(total_outputs2$type.post), ",")
+
+# Create an empty adjacency matrix
+adj_matrix <- matrix(0, nrow = length(unique(c(total_outputs2$type.pre, unlist(total_outputs2$type.post)))),
+                    ncol = length(unique(c(total_outputs2$type.pre, unlist(total_outputs2$type.post)))))
+
+# Define row and column names for the adjacency matrix
+rownames(adj_matrix) <- unique(c(total_outputs2$type.pre, unlist(total_outputs2$type.post)))
+colnames(adj_matrix) <- unique(c(total_outputs2$type.pre, unlist(total_outputs2$type.post)))
+
+# Fill the adjacency matrix based on the connections in the data frame
+for (i in 1:nrow(total_outputs2)) {
+  type_pre <- total_outputs2$type.pre[i]
+  type_post <- unlist(total_outputs2$type.post[i])
+  weight <- total_outputs2$weight[i]
+  
+  adj_matrix[type_pre, type_post] <- weight
+}
+# make a directed matrix
+lal_graph = graph_from_adjacency_matrix(adjmatrix = adj_matrix, mode = "directed", weighted = TRUE, diag = FALSE)
+
+# meta info to include
+circuit_meta <- data.frame()
+for (neuron_name in circuittypes_filtered) {
+  cat("finding data for:", neuron_name, "\n")
+  tmp_meta <- cf_meta(cf_ids(neuron_name, datasets = "flywire"))
+  # Concatenate the results to the total_outputs dataframe
+  circuit_meta <- rbind(circuit_meta, tmp_meta)
+}
+circuit_meta$number = 1
+circuit_nrneurons = aggregate(circuit_meta$number, list(circuit_meta$type), FUN = sum) 
+circuit_meta$number<-NULL
+circuit_meta = left_join(circuit_meta,circuit_nrneurons, by = join_by(type== Group.1))
+circuit_meta$plot_name = paste0(circuit_meta$type, "(", circuit_meta$x, ")", sep = "")
+
+# add meta data to the graph
+V(lal_graph)$plot_name = as.character(circuit_meta$plot_name[match(V(lal_graph)$name, circuit_meta$type)])
+V(lal_graph)$type = as.character(circuit_meta$type[match(V(lal_graph)$name, circuit_meta$type)])
+V(lal_graph)$nt = as.character(circuit_meta$top_nt[match(V(lal_graph)$name, circuit_meta$type)])
+
+
+# give colours depending on nt
+nt_color_lut = c("#1BB6AF", "#007BC3", "#EF7C12", "#551A8B")
+arrow_head= c("Square", "T", "Delta", "Circle")
+names(nt_color_lut) = c("glutamate", "gaba", "acetylcholine", "NA")
+names(arrow_head) = c("glutamate", "gaba", "acetylcholine", "NA")
+V(lal_graph)$color = nt_color_lut[V(lal_graph)$nt]
+
+V(lal_graph)$class = circuit_meta$class[match(V(lal_graph)$name, circuit_meta$type)]
+V(lal_graph)$lineage = circuit_meta$ito_lee_hemilineage[match(V(lal_graph)$name, circuit_meta$plot_name3)]
+
+write_graph(lal_graph, file = "lal_graph")
+
+#make arrows different depending on NT (in cytoscape change the setting for target arrow head to edge_arrow and pass-through)
+edge_list <- data.frame(tail_of(lal_graph,  E(lal_graph))$name)
+colnames(edge_list) <- "source"
+edge_list$nt <- circuit_meta$top_nt[match(edge_list$source, circuit_meta$type)]
+edge_list$arrow_head <- arrow_head[edge_list$nt]
+E(lal_graph)$edge_arrow <- edge_list$arrow_head
+
+RCy3::createNetworkFromIgraph(lal_graph)
+style_name = RCy3::importVisualStyles(filename = "/Users/tomke/Documents/maleVNCdata/Cytoscape/test_styles.xml")
+RCy3::setVisualStyle(style_name)
+
+```
+
+
+
+
+
