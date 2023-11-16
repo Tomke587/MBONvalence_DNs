@@ -52,8 +52,11 @@ ff = read_feather(f)
 ```{r innervating LH, echo=FALSE}
 # transform into percent
 ff$post_pt_root_id = as.character(ff$post_pt_root_id)
-ffP <- ff %>%
-  left_join(count(ff, post_pt_root_id), by = "post_pt_root_id")
+ffsum = aggregate(ff$count, by = list(ff$post_pt_root_id), FUN = sum)
+names(ffsum) = c("post_pt_root_id", "sum")
+ff = left_join(ff, ffsum)
+ff$percent = ff$count/ff$
+
 ```
 
 
