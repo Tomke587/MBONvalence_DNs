@@ -60,13 +60,13 @@ ff = left_join(ff, ffsum)
 ff$percent = (ff$count/ff$sum)*100
 ```
 
-# how many have >30% postsynapses in the LH
+# how many have >60% postsynapses in the LH: 
 ```{r innervating LH, echo=FALSE}
 LHff = subset(ff, ff$neuropil %in% c("LH_L", "LH_R"))
 # take all with more than 5 synapses
 LHff = subset(LHff, LHff$count>5)
-# take all with more than 30%
-LHff = subset(LHff, LHff$percent>30)
+# take all with more than 60%
+LHff = subset(LHff, LHff$percent>60)
 #update ids
 LHff$post_pt_root_id = flywire_updateids(LHff$post_pt_root_id)
 # still a lot of neurons or fragments
@@ -102,7 +102,7 @@ LHneuronstypes = na.omit(LHneuronstypes)
 mLHcelltype =  subset(m, m$cell_type %in% LHneuronstypes)
 LHneurons = unique(bind_rows(LHneurons,mLHcelltype))
 nrow(LHneurons)
-# 3251 neurons
+# 2805 neurons
 
 LHneurons  <- LHneurons %>%
   mutate(cell_type = ifelse(grepl("^\\d+$", cell_type) & cell_class == "LHLN", paste0("LHLN", cell_type), cell_type))
@@ -110,13 +110,12 @@ LHneurons <- LHneurons %>%
   mutate_all(~ifelse(is.na(.), "unknown", .))
 table(LHneurons$cell_class)
    # ALIN  LHCENT    LHLN unknown 
-   #    6      42     479    2724 
+   #    2      42     479    2282 
 table(LHneurons$cell_type)
 
 # remove neurons that have not been matched at all (current type = unknown)
 unknown1 = subset(LHneurons, LHneurons$cell_type == "unknown")
 LHneurons = subset(LHneurons, !LHneurons$cell_type == "unknown")
-# 3802
 ```
 some of the unknown cell type have a number in cf_meta for their group add this to the current meta data of LHneurons
 ```{r LHneurons, echo=FALSE}
@@ -133,6 +132,11 @@ LHneurons <- LHneurons %>%
 # 315 unknown that are not LHLNs
 LHneurons$cell_type[LHneurons$cell_type == "unknown"] = paste0("unknown",LHneurons$root_id, sep = "")
 
+
+# summary: 
+# 2805 neurons
+#    ALIN  LHCENT    LHLN unknown 
+      # 2      42     479    2282 
 saveRDS(LHneurons, file = "LHneurons.RDS")
 ```
 
@@ -141,10 +145,10 @@ saveRDS(LHneurons, file = "LHneurons.RDS")
 look again at the feather file for these neurons
 ```{r ff for LH neurons, echo=FALSE}
 # take root_ids from that specific timepoint
-LHneurons$root_id = flywire_updateids(LHneurons$root_id, timestamp = 756)
+# LHneurons$root_id = flywire_updateids(LHneurons$root_id, timestamp = 756)
 LHneuronsff = subset(ff, ff$post_pt_root_id %in% LHneurons$root_id)
 length(unique(LHneuronsff$post_pt_root_id))
-#  2672
+#  2302
 # not all !
 saveRDS(LHneuronsff, file = "LHneuronsff.RDS")
 ```
