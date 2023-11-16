@@ -7,8 +7,9 @@ date: "2023-11-10"
 look for all LH neurons, also those currently not annotated as LH
 1. currently typed LH neurons
   including LHCENT, LHLN, ALIN
-2. all neurons with more than 30% input form the LH
-  
+2. all neurons with more than 30% input form the LH and are in our meta data (meaning they are neurons)
+  remove cell classes that we are not currently interested in
+3. merge the two and use for LH to DN connectivity 
 
 ```{r setup, include=FALSE}
 library(dplyr)
@@ -16,6 +17,7 @@ library(coconatfly)
 library(tibble)
 library(fafbseg)
 library(arrow)
+library(ggplot2)
 ```
 
 1. typed neurons that include LH in their name
@@ -55,8 +57,107 @@ ff$post_pt_root_id = as.character(ff$post_pt_root_id)
 ffsum = aggregate(ff$count, by = list(ff$post_pt_root_id), FUN = sum)
 names(ffsum) = c("post_pt_root_id", "sum")
 ff = left_join(ff, ffsum)
-ff$percent = ff$count/ff$
+ff$percent = (ff$count/ff$sum)*100
+```
 
+# how many have >30% postsynapses in the LH
+```{r innervating LH, echo=FALSE}
+LHff = subset(ff, ff$neuropil %in% c("LH_L", "LH_R"))
+# take all with more than 5 synapses
+LHff = subset(LHff, LHff$count>5)
+# take all with more than 30%
+LHff = subset(LHff, LHff$percent>30)
+#update ids
+LHff$post_pt_root_id = flywire_updateids(LHff$post_pt_root_id)
+# still a lot of neurons or fragments
+# chose only the ones that have some sort of meta annotation
+flytable_login()
+m =  flytable_meta()
+LHff_m = subset(m, m$root_id %in% LHff$post_pt_root_id)
+LHff_m <- LHff_m %>%
+  mutate_all(~ifelse(is.na(.), "unknown", .))
+table(LHff_m$cell_class)
+         # ALIN          ALPN            AN           DAN        LHCENT          LHLN 
+         #    4            97             1             2            15           479 
+         #  mAL putative_glia       unknown 
+         #    1            71          2425 
+
+# remove cell classes that we are not interested in at the moment
+LHff_m = subset(LHff_m, !LHff_m$cell_class %in% c("ALPN","AN", "DAN","putative_glia", "mAL" ))
+LHff_mids = LHff_m$root_id
+# 2646
+   # ALIN  LHCENT    LHLN unknown 
+   #    4      15     479    2425 
+```
+
+```{r LHneurons, echo=FALSE}
+LHtype  <- m[grepl("LH", m$cell_type, ignore.case = TRUE), ]
+LHLN <- m[grepl("LHLN", m$cell_class, ignore.case = TRUE), ]
+LHff_m = subset(m, m$root_id %in% LHff_mids)
+LHneurons = unique(bind_rows(LHtype,LHLN,LHff_m))
+
+# get all of a given typed cell type
+LHneuronstypes = unique(LHneurons$cell_type)
+LHneuronstypes = na.omit(LHneuronstypes)
+mLHcelltype =  subset(m, m$cell_type %in% LHneuronstypes)
+LHneurons = unique(bind_rows(LHneurons,mLHcelltype))
+nrow(LHneurons)
+# 3251 neurons
+
+LHneurons  <- LHneurons %>%
+  mutate(cell_type = ifelse(grepl("^\\d+$", cell_type) & cell_class == "LHLN", paste0("LHLN", cell_type), cell_type))
+LHneurons <- LHneurons %>%
+  mutate_all(~ifelse(is.na(.), "unknown", .))
+table(LHneurons$cell_class)
+   # ALIN  LHCENT    LHLN unknown 
+   #    6      42     479    2724 
+table(LHneurons$cell_type)
+
+# remove neurons that have not been matched at all (current type = unknown)
+unknown1 = subset(LHneurons, LHneurons$cell_type == "unknown")
+LHneurons = subset(LHneurons, !LHneurons$cell_type == "unknown")
+# 3802
+```
+some of the unknown cell type have a number in cf_meta for their group add this to the current meta data of LHneurons
+```{r LHneurons, echo=FALSE}
+unknown = cf_meta(cf_ids(flywire=unknown1$root_id)) 
+unknowntype = subset(unknown, select = c(supervoxel_id, type))
+names(unknowntype) = c("supervoxel_id", "cell_type")
+unknown1$cell_type<-NULL
+unknown1 = left_join(unknown1,unknowntype)
+
+
+LHneurons = bind_rows(LHneurons, unknown1)
+LHneurons <- LHneurons %>%
+  mutate_all(~ifelse(is.na(.), "unknown", .))
+# 315 unknown that are not LHLNs
+LHneurons$cell_type[LHneurons$cell_type == "unknown"] = paste0("unknown",LHneurons$root_id, sep = "")
+
+saveRDS(LHneurons, file = "LHneurons.RDS")
 ```
 
 
+
+look again at the feather file for these neurons
+```{r ff for LH neurons, echo=FALSE}
+# take root_ids from that specific timepoint
+LHneurons$root_id = flywire_updateids(LHneurons$root_id, timestamp = 756)
+LHneuronsff = subset(ff, ff$post_pt_root_id %in% LHneurons$root_id)
+length(unique(LHneuronsff$post_pt_root_id))
+#  2672
+# not all !
+saveRDS(LHneuronsff, file = "LHneuronsff.RDS")
+```
+plot
+```{r ff for LH neurons, echo=FALSE}
+plotLHneuronsff = subset(LHneuronsff, LHneuronsff$neuropil %in% c("LH_L", "LH_R"))
+plotLHneuronsff = aggregate(plotLHneuronsff$percent, by = list(plotLHneuronsff$post_pt_root_id), FUN = sum)
+plotLHneuronsff %>%
+  arrange(Group.1) %>%
+  ggplot(aes(x = reorder(Group.1, -x), y = x)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(title = "Distribution of Percentages in LH_R and LH_L",
+       x = "post_pt_root_id",
+       y = "Percentage") +
+  theme_minimal()
+```
