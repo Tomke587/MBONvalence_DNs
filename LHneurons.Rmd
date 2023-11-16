@@ -4,17 +4,56 @@ output: html_document
 date: "2023-11-10"
 ---
 
-look for LH neurons currently not annotated as LH
-1. get everything with at least 20% of its input form the LH
-
-
+look for all LH neurons, also those currently not annotated as LH
+1. currently typed LH neurons
+  including LHCENT, LHLN, ALIN
+2. all neurons with more than 30% input form the LH
+  
 
 ```{r setup, include=FALSE}
+library(dplyr)
+library(coconatfly)
+library(tibble)
+library(fafbseg)
+library(arrow)
+```
 
+1. typed neurons that include LH in their name
+```{r setup, include=FALSE}
+LH = cf_meta(cf_ids(flywire='/type:LH.+')) 
+nrow(LH)
+# 771, not all need to increase by looking at everything with more than x% input from the LH
+table(LH$type)
+# get all that have a cell class LHLN
+LHLN = cf_meta(cf_ids(flywire='/cell_class:LHLN')) 
+nrow(LHLN)
+LHLN <- LHLN %>%
+  mutate(type = ifelse(grepl("^\\d+$", type), paste0("LHLN", type), type))
+LHneurons = unique(bind_rows(LH, LHLN))
+# give all without cell type an unknown so I can count it
+LHneurons <- LHneurons %>%
+  mutate_all(~ifelse(is.na(.), "unknown", .))
+# 1210
+# this is closer to what we expect for LH neurons
+table(LHneurons$cell_class)
+#    ALIN  LHCENT    LHLN unknown 
+      # 2      42     479     687 
 ```
 
 
-
+2. neurons with postsynapses in the LH
+# read from feather file with postsynapses per neuropil 
 ```{r setup, include=FALSE}
-
+f="/Users/tomke/Library/Application Support/R/fafbseg/flywire_connectome_analysis_data/756/per_neuron_neuropilv2_filtered_count_post_756.feather"
+ff = read_feather(f)
 ```
+
+# tansform into percent
+```{r innervating LH, echo=FALSE}
+# transform into percent
+ff$post_pt_root_id = as.character(ff$post_pt_root_id)
+ffP <- ff %>%
+  left_join(count(ff, post_pt_root_id), by = "post_pt_root_id")
+```
+
+
