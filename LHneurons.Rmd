@@ -27,6 +27,14 @@ nrow(LH)
 # 771, not all need to increase by looking at everything with more than x% input from the LH
 table(LH$type)
 # get all that have a cell class LHLN
+
+# get all LH that have a LH hemibrain match and are currently a number in type
+LHhemi = cf_meta(cf_ids(flywire='/hemibrain_type:LH.+')) 
+difference2 = subset(LHhemi,!LHhemi$id %in% LH$id)
+difference3   <-difference2[!is.na(as.numeric(difference2$type)), ]
+LH = bind_rows(LH,difference3)
+
+
 LHLN = cf_meta(cf_ids(flywire='/cell_class:LHLN')) 
 nrow(LHLN)
 LHLN <- LHLN %>%
@@ -35,11 +43,14 @@ LHneurons = unique(bind_rows(LH, LHLN))
 # give all without cell type an unknown so I can count it
 LHneurons <- LHneurons %>%
   mutate_all(~ifelse(is.na(.), "unknown", .))
-# 1210
+# 1223
 # this is closer to what we expect for LH neurons
 table(LHneurons$cell_class)
-#    ALIN  LHCENT    LHLN unknown 
-      # 2      42     479     687 
+#      ALIN  LHCENT    LHLN unknown 
+      # 2      42     479     700 
+
+saveRDS(LHneurons, file = "LHtypedneurons_meta.RDS")
+# start with these and then include the other LH relevant neurons later
 ```
 
 
