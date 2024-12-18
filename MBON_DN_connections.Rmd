@@ -28,6 +28,20 @@ DN = cf_meta(cf_ids(flywire='super_class:descending'))
 # 1349
 ```
 
+```{r direct, include=FALSE}
+MBON_DS = cf_partner_summary(MBON$key, threshold = 5, partners = 'output')
+MBON_DN = subset(MBON_DS, MBON_DS$type.post %in% DN$type)
+nrow(MBON_DN)
+# 55 direct MBONs to DN connections that are stronger than 5
+length(unique(MBON_DN$type.pre))
+# 11 MBONs that directly connect to DNs
+
+MBON_DS = cf_partners(MBON$key, threshold = 5, partners = 'output')
+MBON_DN = subset(MBON_DS, MBON_DS$type.post %in% DN$type)
+```
+
+
+
 ```{r}
 mbon.dn=effective_connectivity(startids=cf_ids(flywire = MBON), 
   endids=cf_ids(flywire = "/super_class:descending"), threshold=2)

@@ -1,0 +1,160 @@
+---
+title: "LH_MBON_convergence"
+author: "Tomke Stuerner"
+date: "2023-11-21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(coconatfly)
+library(tibble)
+library(fafbseg)
+library(igraph)
+library(RCy3)
+library(igraph)
+library(sjmisc)
+library(svglite)
+```
+
+```{r setup, include=FALSE}
+MBON=cf_meta(cf_ids(flywire='cell_class:MBON'))
+nrow(MBON)
+# 96 typed MBONs
+LHtypedneurons_meta <- readRDS("/Users/tomke/Documents/dev/MBONvalence_DNs/LHtypedneurons_meta.RDS")
+# 1223 typed as LH neurons
+# later add LH neurons with >60% input from LH
+
+ALPN = cf_meta(cf_ids(flywire='cell_class:ALPN'))
+
+DN = cf_meta(cf_ids(flywire='super_class:descending'))
+# nrow(DN)
+# 1349
+```
+
+```{direct connectivity DNs r}
+# threshold 5 synapses, merge MBON and LH
+MBON_DN$pre_id = as.character(MBON_DN$pre_id)
+MBONLH_DN = bind_rows(MBON_DN,LHneurons_DN)
+MBONLHmeta = bind_rows(MBON,LHtypedneurons_meta)
+MBONLHtype = subset(MBONLHmeta, select = c(id, type))
+names(MBONLHtype) = c("pre_id", "pre_type")
+names(MBONLH_DN)[10] = "post_type"
+
+MBONLH_DN = left_join(MBONLH_DN, MBONLHtype)
+
+MBONLH_DNmean = aggregate(MBONLH_DN$weight, by = list(MBONLH_DN$pre_type, MBONLH_DN$post_type), FUN = mean)
+names(MBONLH_DNmean) = c("pre_type", "post_type", "weight")
+
+# make mean connection per type
+
+# make inputpercent onto DN
+
+# average 
+
+```
+
+```{1hop connectivity r}
+
+LHMBON = c(MBON$key, LHtypedneurons_meta$key)
+mbonlh.dn=effective_connectivity(startids=LHMBON, 
+  endids=cf_ids(flywire = "/super_class:descending"), threshold=2)
+
+mbonlh.dn_matrix = as.matrix(mbonlh.dn)
+mbonlh.dn_df = as.data.frame(mbonlh.dn_matrix)
+
+DNtype = subset(DN, select = c(key, type))
+mbonlh.dn_df<- mbonlh.dn_df %>% rownames_to_column(var="key")
+mbonlh.dn_df = left_join(mbonlh.dn_df, MBONLHtype)
+mbonlh.dn_df %>%
+  group_by(type) %>%
+  summarise(across(where(is.numeric), ~sum(.x))) ->mbonlh.dn_dftype
+mbonlh.dn_dftype <- mbonlh.dn_dftype %>% remove_rownames %>% column_to_rownames(var="type")
+# mbonlh.dn_dftype
+mbonlh.dn_dftype <- as.data.frame(t(mbonlh.dn_dftype))
+mbonlh.dn_dftype <- mbonlh.dn_dftype %>% rownames_to_column(var="key")
+mbonlh.dn_dftypes = left_join(mbonlh.dn_dftype, DNtype)
+mbonlh.dn_dftypes %>%
+  group_by(type) %>%
+  summarise(across(where(is.numeric), ~mean(.x))) ->mbonlh.dn_dftypes
+mbonlh.dn_dftypes <- mbonlh.dn_dftypes %>% remove_rownames %>% column_to_rownames(var="type")
+mbonlh.dn_dftypes <- as.data.frame(t(mbonlh.dn_dftypes))
+mbonlh.dn_dftypes = as.matrix(mbonlh.dn_dftypes)
+heatmap(mbonlh.dn_dftypes)
+
+library(reshape2)
+mbonlh_dn_norm = setNames(melt(mbonlh.dn_dftypes), c('MBONLHtype', 'DNtype', 'normvalues'))
+mbonlh_dn_norm = subset(mbonlh_dn_norm, mbonlh_dn_norm$normvalues>0)
+
+main_mbonlh_dn_norm = subset(mbonlh_dn_norm, mbonlh_dn_norm$normvalues>0.5)
+write.csv(mbonlh_dn_norm, "mbonlh_dn_norm.csv")
+
+```
+```{plot connectivity r}
+df_long <- MBONLH_DNmean %>%
+  separate_rows(post_type, sep = ",")
+
+# Create an igraph graph object
+g <- graph_from_data_frame(df_long, directed = TRUE)
+
+# Set edge attributes (weights)
+E(g)$weight <- df_long$weight
+
+# Plot the graph
+plot(
+  g,
+  edge.width = E(g)$weight / max(E(g)$weight) * 2,  # Scale edge width
+  edge.arrow.size = 0.5,  # Adjust arrow size
+  vertex.size = 10,  # Adjust vertex size
+  vertex.label = V(g)$name,  # Use neuron names as labels
+  vertex.label.cex = 0.7,  # Adjust label size
+  main = "Neuron Connection Plot"
+)
+
+
+# Create an igraph graph object from the dataframe
+g <- graph.data.frame(MBONLH_DNmean, directed = TRUE)
+
+# Convert the graph to an adjacency matrix
+adj_matrix <- as.matrix(get.adjacency(g, attr = "weight", sparse = FALSE, names = TRUE))
+
+
+DN_graph = graph_from_adjacency_matrix(adjmatrix = adj_matrix, mode = "directed", weighted = TRUE, diag = FALSE)
+
+# meta info to include
+circuit_meta = types_m
+circuit_meta$number = 1
+circuit_nrneurons = aggregate(circuit_meta$number, list(circuit_meta$type), FUN = sum) 
+circuit_meta$number<-NULL
+circuit_meta = left_join(circuit_meta,circuit_nrneurons, by = join_by(type== Group.1))
+circuit_meta$plot_name = paste0(circuit_meta$type, "(", circuit_meta$x, ")", sep = "")
+circuit_meta$name = paste0(circuit_meta$type, "_", circuit_meta$side, sep = "")
+# add meta data to the graph
+V(lal_graph)$plot_name = as.character(circuit_meta$plot_name[match(V(lal_graph)$name, circuit_meta$name)])
+V(lal_graph)$type = as.character(circuit_meta$type[match(V(lal_graph)$name, circuit_meta$name)])
+V(lal_graph)$nt = as.character(circuit_meta$top_nt[match(V(lal_graph)$name, circuit_meta$name)])
+
+
+# give colours depending on nt
+nt_color_lut = c("#1BB6AF", "#007BC3", "#EF7C12", "#551A8B")
+arrow_head= c("Square", "T", "Delta", "Circle")
+names(nt_color_lut) = c("glutamate", "gaba", "acetylcholine", "NA")
+names(arrow_head) = c("glutamate", "gaba", "acetylcholine", "NA")
+V(lal_graph)$color = nt_color_lut[V(lal_graph)$nt]
+
+V(lal_graph)$class = circuit_meta$class[match(V(lal_graph)$name, circuit_meta$name)]
+V(lal_graph)$lineage = circuit_meta$ito_lee_hemilineage[match(V(lal_graph)$name, circuit_meta$name)]
+
+write_graph(lal_graph, file = "lal_graph_refined")
+
+#make arrows different depending on NT (in cytoscape change the setting for target arrow head to edge_arrow and pass-through)
+edge_list <- data.frame(tail_of(lal_graph,  E(lal_graph))$name)
+colnames(edge_list) <- "source"
+edge_list$nt <- circuit_meta$top_nt[match(edge_list$source, circuit_meta$name)]
+edge_list$arrow_head <- arrow_head[edge_list$nt]
+E(lal_graph)$edge_arrow <- edge_list$arrow_head
+
+RCy3::createNetworkFromIgraph(DN_graph)
+style_name = RCy3::importVisualStyles(filename = "/Users/tomke/Documents/maleVNCdata/Cytoscape/test_styles.xml")
+RCy3::setVisualStyle(style_name)
+```

@@ -1,0 +1,42 @@
+---
+title: "LH_DN_connectivity"
+author: "Tomke Stuerner"
+date: "2023-11-17"
+output: html_document
+---
+
+#look at the connections between LHneurons and DNs
+1. direct connections
+2. 1hop connections (gregs script)
+3. effective connectivity (adapted from Kathi later)
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(coconatfly)
+library(tibble)
+```
+
+1223 Neurons typed as LH or in cell class LHLN on the 17.11.2023
+```{r neurons, include=FALSE}
+LHtypedneurons_meta <- readRDS("/Users/tomke/Documents/dev/MBONvalence_DNs/LHtypedneurons_meta.RDS")
+```
+1. direct connections LH to DN
+```{r direct, include=FALSE}
+LHneurons_DS = cf_partners(LHtypedneurons_meta$key, threshold = 5, partners = 'output')
+# look just at direct DN connection
+LHneurons_DN = subset(LHneurons_DS, LHneurons_DS$super_class == "descending")
+# add LHtype if available
+LHtypedneurons_meta$plotname = LHtypedneurons_meta$type
+LHtypedneurons_meta$plotname[LHtypedneurons_meta$hemibrain_type == "LHAV1a3"] =  "LHAV1a3"
+LHtype = subset(LHtypedneurons_meta, select = c(id, plotname))
+names(LHtype) = c("pre_id", "LH_type")
+LHneurons_DN$pre_id = as.character(LHneurons_DN$pre_id)
+LHneurons_DN = left_join(LHneurons_DN,LHtype)
+
+LHneurons_DNsum = aggregate(LHneurons_DN$weight, by = list(LHneurons_DN$LH_type, LHneurons_DN$type), FUN = sum)
+
+nrow(LHneurons_DNsum)
+# 142 LHtype to DNtype connections with a weight >5
+length(unique(LHneurons_DNsum$Group.1))
+# 46 LH neurons that directly connect onto DNs
+```
